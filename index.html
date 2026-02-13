@@ -22,18 +22,18 @@ let jumpPower = -15;
 let player = { x: 100, y: canvas.height - 100, width: 50, height: 50, dy: 0 };
 let obstacles = [];
 let level = 0;
-const maxLevels = 500; // Total random levels
+const maxLevels = 500;
 let score = 0;
 
 // Function to generate a random level
 function generateLevel(levelNum) {
   let obs = [];
-  let obstacleCount = Math.min(5 + Math.floor(levelNum / 10), 15); // increase obstacles with level
+  let obstacleCount = Math.min(5 + Math.floor(levelNum / 10), 15); 
   for (let i = 0; i < obstacleCount; i++) {
-    let width = 30 + Math.floor(Math.random() * 50);
-    let gap = 200 + Math.floor(Math.random() * 200); // distance to next obstacle
+    let width = 20 + Math.floor(Math.random() * 30); // smaller obstacles
+    let gap = 200 + Math.floor(Math.random() * 200); 
     let prevX = obs.length ? obs[obs.length - 1].x : canvas.width;
-    let height = Math.random() < 0.8 ? 50 : 100 + Math.floor(Math.random() * 100); // some taller obstacles for harder levels
+    let height = Math.random() < 0.8 ? 50 : 100 + Math.floor(Math.random() * 100); 
     obs.push({ x: prevX + gap, y: canvas.height - height, width: width, height: height });
   }
   return obs;
@@ -57,7 +57,6 @@ document.addEventListener('keydown', e => {
 });
 
 function update() {
-  // Apply gravity
   player.dy += gravity;
   player.y += player.dy;
 
@@ -66,20 +65,17 @@ function update() {
     player.dy = 0;
   }
 
-  // Move obstacles
   for (let obs of obstacles) {
     obs.x -= 5;
-    // Collision detection
     if (player.x < obs.x + obs.width &&
         player.x + player.width > obs.x &&
         player.y < obs.y + obs.height &&
         player.y + player.height > obs.y) {
       alert("Game Over! Level " + (level + 1));
-      loadLevel(level); // restart level
+      loadLevel(level);
     }
   }
 
-  // Check if level finished
   if (obstacles.every(o => o.x + o.width < 0)) {
     level++;
     if (level >= maxLevels) {
@@ -93,17 +89,14 @@ function update() {
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Draw player
   ctx.fillStyle = 'cyan';
   ctx.fillRect(player.x, player.y, player.width, player.height);
 
-  // Draw obstacles
   ctx.fillStyle = 'red';
   for (let obs of obstacles) {
     ctx.fillRect(obs.x, obs.y, obs.width, obs.height);
   }
 
-  // Draw level info
   ctx.fillStyle = 'white';
   ctx.font = '30px Arial';
   ctx.fillText("Level: " + (level + 1), 20, 40);
@@ -115,7 +108,6 @@ function loop() {
   requestAnimationFrame(loop);
 }
 
-// Start game
 loadLevel(level);
 loop();
 </script>
