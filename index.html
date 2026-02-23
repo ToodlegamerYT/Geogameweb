@@ -3,226 +3,153 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Ultimate 2D RPG</title>
+<title>3D Luffy RPG Starter</title>
 <style>
-body { margin:0; background:#111; font-family:sans-serif; color:white; display:flex; flex-direction:column; align-items:center; }
-canvas { border:3px solid #222; background:#333; margin-top:10px; }
-#hud { margin-top:10px; }
-#inventory, #quests { margin-top:5px; }
+body { margin:0; overflow:hidden; font-family:sans-serif; }
+#hud { position:absolute; top:10px; left:10px; color:white; font-size:16px; z-index:100; }
 </style>
 </head>
 <body>
-<h1>Ultimate 2D RPG</h1>
-<canvas id="game" width="640" height="480"></canvas>
-<div id="hud"></div>
-<div id="inventory"></div>
-<div id="quests"></div>
+<div id="hud">HP: 100 | Inventory: None | Current: Luffy</div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.153.0/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/controls/PointerLockControls.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.153.0/examples/js/loaders/GLTFLoader.js"></script>
 
 <script>
-// ===== CANVAS SETUP =====
-const canvas = document.getElementById("game");
-const ctx = canvas.getContext("2d");
-const hud = document.getElementById("hud");
-const inventoryDiv = document.getElementById("inventory");
-const questsDiv = document.getElementById("quests");
+// ===== SCENE SETUP =====
+let scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
 
-const tileSize = 32;
+let camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+let renderer = new THREE.WebGLRenderer({antialias:true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
 
-// ===== GAME DATA =====
+// ===== LIGHTS =====
+let light = new THREE.DirectionalLight(0xffffff,1);
+light.position.set(10,20,10);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x888888));
 
-// Map tiles (0=floor,1=wall,2=npc,3=item,4=portal)
-let maps = [
-  [
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,4,1],
-    [1,0,1,1,0,1,1,1,0,1,1,1,0,0,1,1,1,0,0,1],
-    [1,0,0,0,0,0,0,1,0,0,0,1,2,0,0,0,0,0,0,1],
-    [1,0,1,1,1,1,0,1,0,1,0,1,1,0,1,1,0,1,0,1],
-    [1,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1],
-    [1,1,1,1,0,1,1,1,0,1,1,1,1,0,0,1,1,1,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,0,1,1,1,1,1,1,1,1,0,1,1,0,0,1,1,1,0,1],
-    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
-    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
-  ]
-];
-
-let currentMap = 0;
-let map = maps[currentMap];
-
-// ===== PLAYER PARTY =====
-let players = [
-  {name:"Luffy", x:1, y:1, hp:50, mp:20, color:"yellow", inventory:[], xp:0, level:1},
-  {name:"Zoro", x:2, y:1, hp:45, mp:15, color:"green", inventory:[], xp:0, level:1},
-  {name:"Nami", x:3, y:1, hp:40, mp:25, color:"orange", inventory:[], xp:0, level:1}
-];
-
-let currentPlayer = 0;
-
-// ===== ENEMIES =====
-let enemies = [
-  {x:10,y:5,hp:20,color:"red",xp:20},
-  {x:13,y:8,hp:30,color:"purple",xp:30}
-];
-
-// ===== ITEMS =====
-let items = [
-  {x:15,y:1,name:"Potion",effect:(p)=>{p.hp+=20; alert(`${p.name} restored 20 HP!`);}},
-  {x:5,y:5,name:"Gold",effect:(p)=>{alert(`${p.name} collected Gold!`);}}
-];
-
-// ===== NPCs =====
-let npcs = [
-  {x:12,y:3,text:"Hey heroes! Collect the Potion and reach the portal to advance!",quest:"Collect Potion"}
-];
-
-// ===== PORTALS =====
-let portals = [
-  {x:18,y:1,targetMap:0,targetX:1,targetY:1}
-];
-
-// ===== DRAW FUNCTION =====
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  
-  // Draw map
-  for(let y=0;y<map.length;y++){
-    for(let x=0;x<map[y].length;x++){
-      let tile=map[y][x];
-      if(tile===1) ctx.fillStyle="#222";
-      else ctx.fillStyle="#666";
-      ctx.fillRect(x*tileSize,y*tileSize,tileSize,tileSize);
-    }
-  }
-  
-  // Items
-  items.forEach(i=>{
-    ctx.fillStyle="#ff0";
-    ctx.fillRect(i.x*tileSize,i.y*tileSize,tileSize,tileSize);
-  });
-  
-  // NPCs
-  npcs.forEach(n=>{
-    ctx.fillStyle="#0af";
-    ctx.fillRect(n.x*tileSize,n.y*tileSize,tileSize,tileSize);
-  });
-  
-  // Portals
-  portals.forEach(p=>{
-    ctx.fillStyle="#f0f";
-    ctx.fillRect(p.x*tileSize,p.y*tileSize,tileSize,tileSize);
-  });
-  
-  // Enemies
-  enemies.forEach(e=>{
-    ctx.fillStyle=e.color;
-    ctx.fillRect(e.x*tileSize,e.y*tileSize,tileSize,tileSize);
-  });
-  
-  // Players
-  players.forEach(p=>{
-    ctx.fillStyle=p.color;
-    ctx.fillRect(p.x*tileSize,p.y*tileSize,tileSize,tileSize);
-  });
-  
-  updateHUD();
-}
-
-// ===== HUD =====
-function updateHUD(){
-  let p=players[currentPlayer];
-  hud.innerHTML=`Current: ${p.name} | HP: ${p.hp} | MP: ${p.mp} | Level: ${p.level} | XP: ${p.xp}`;
-  inventoryDiv.innerHTML=`Inventory: ${p.inventory.join(", ")}`;
-  questsDiv.innerHTML=`Quests: ${p.quests ? p.quests.join(", ") : ""}`;
-}
-
-// ===== PLAYER MOVEMENT =====
-document.addEventListener("keydown",e=>{
-  let p=players[currentPlayer];
-  let nx=p.x;
-  let ny=p.y;
-  
-  if(e.key==="ArrowUp") ny--;
-  if(e.key==="ArrowDown") ny++;
-  if(e.key==="ArrowLeft") nx--;
-  if(e.key==="ArrowRight") nx++;
-  if(e.key==="Tab"){ // Switch character
-    currentPlayer=(currentPlayer+1)%players.length;
-    draw();
-    return;
-  }
-  
-  if(map[ny] && map[ny][nx]!==1){
-    p.x=nx; p.y=ny;
-  }
-  
-  // Items
-  items.forEach((i,index)=>{
-    if(p.x===i.x && p.y===i.y){
-      p.inventory.push(i.name);
-      i.effect(p);
-      items.splice(index,1);
-    }
-  });
-  
-  // NPCs
-  npcs.forEach(n=>{
-    if(p.x===n.x && p.y===n.y){
-      alert(n.text);
-      if(!p.quests) p.quests=[];
-      if(!p.quests.includes(n.quest)) p.quests.push(n.quest);
-    }
-  });
-  
-  // Enemies
-  enemies.forEach((e,index)=>{
-    if(p.x===e.x && p.y===e.y){
-      e.hp-=10;
-      p.hp-=5;
-      alert(`Combat! ${p.name} HP:${p.hp} Enemy HP:${e.hp}`);
-      if(e.hp<=0){
-        alert("Enemy defeated!");
-        p.xp+=e.xp;
-        enemies.splice(index,1);
-        if(p.xp>=p.level*50){p.level++; p.xp=0; alert(`${p.name} leveled up!`);}
-      }
-      if(p.hp<=0){
-        alert(`${p.name} died! Respawning...`);
-        p.hp=50; p.x=1; p.y=1;
-      }
-    }
-  });
-  
-  // Portals
-  portals.forEach(portal=>{
-    if(p.x===portal.x && p.y===portal.y){
-      map=maps[portal.targetMap];
-      p.x=portal.targetX;
-      p.y=portal.targetY;
-      alert(`${p.name} entered a new area!`);
-    }
-  });
-  
-  draw();
+// ===== GROUND =====
+let loader = new THREE.TextureLoader();
+loader.load("/mnt/data/A_colorful_game_UI_screenshot:_a_top-down/2D_RPG/a.png", function(texture){
+    let geometry = new THREE.PlaneGeometry(50,50);
+    let material = new THREE.MeshLambertMaterial({map:texture});
+    let plane = new THREE.Mesh(geometry, material);
+    plane.rotation.x = -Math.PI/2;
+    scene.add(plane);
 });
 
-// ===== ENEMY AI =====
-function moveEnemies(){
-  enemies.forEach(e=>{
-    let target=players[0]; // simple AI toward first player
-    let dx=target.x-e.x;
-    let dy=target.y-e.y;
-    if(Math.abs(dx)>Math.abs(dy)) e.x += dx>0?1:-1;
-    else e.y += dy>0?1:-1;
-    if(map[e.y] && map[e.y][e.x]===1){e.x-=dx>0?1:-1; e.y-=dy>0?1:-1;}
-  });
-  draw();
+// ===== PLAYER PARTY =====
+let players = [];
+let playerData = [
+    {name:"Luffy", color:0xffff00, x:0, z:0, hp:100, inventory:[], level:1},
+    {name:"Zoro", color:0x00ff00, x:2, z:0, hp:90, inventory:[], level:1},
+    {name:"Nami", color:0xff6600, x:-2, z:0, hp:80, inventory:[], level:1}
+];
+
+playerData.forEach(p=>{
+    let geometry = new THREE.BoxGeometry(1,2,1);
+    let material = new THREE.MeshLambertMaterial({color:p.color});
+    let mesh = new THREE.Mesh(geometry, material);
+    mesh.position.set(p.x,1,p.z);
+    mesh.userData = p;
+    scene.add(mesh);
+    players.push(mesh);
+});
+
+let currentPlayer = 0;
+let player = players[currentPlayer];
+
+// ===== ENEMIES =====
+let enemies = [];
+function addEnemy(x,z,color,hp){
+    let geo = new THREE.BoxGeometry(1,2,1);
+    let mat = new THREE.MeshLambertMaterial({color:color});
+    let enemy = new THREE.Mesh(geo, mat);
+    enemy.position.set(x,1,z);
+    enemy.userData={hp:hp};
+    scene.add(enemy);
+    enemies.push(enemy);
 }
+addEnemy(5,5,0xff0000,50);
+addEnemy(-4,3,0x9900ff,30);
 
-setInterval(moveEnemies,1000);
+// ===== NPCs =====
+let npcs = [];
+function addNPC(x,z,color,text){
+    let geo = new THREE.BoxGeometry(1.5,2,1);
+    let mat = new THREE.MeshLambertMaterial({color:color});
+    let npc = new THREE.Mesh(geo, mat);
+    npc.position.set(x,1,z);
+    npc.userData={text:text};
+    scene.add(npc);
+    npcs.push(npc);
+}
+addNPC(3,-3,0x0000ff,"Collect the potion and reach the portal!");
 
-// ===== INITIAL DRAW =====
-draw();
+// ===== CAMERA CONTROLS =====
+let controls = new THREE.PointerLockControls(camera, document.body);
+document.body.addEventListener('click', ()=>{controls.lock();}, false);
+
+// ===== MOVEMENT =====
+let moveForward=false, moveBackward=false, moveLeft=false, moveRight=false;
+document.addEventListener('keydown', e=>{
+    if(e.key==='w') moveForward=true;
+    if(e.key==='s') moveBackward=true;
+    if(e.key==='a') moveLeft=true;
+    if(e.key==='d') moveRight=true;
+    if(e.key==='Tab'){ currentPlayer=(currentPlayer+1)%players.length; player=players[currentPlayer]; e.preventDefault(); }
+});
+document.addEventListener('keyup', e=>{
+    if(e.key==='w') moveForward=false;
+    if(e.key==='s') moveBackward=false;
+    if(e.key==='a') moveLeft=false;
+    if(e.key==='d') moveRight=false;
+});
+
+// ===== GAME LOOP =====
+function animate(){
+    requestAnimationFrame(animate);
+    let speed=0.1;
+    if(moveForward) player.position.z -= speed;
+    if(moveBackward) player.position.z += speed;
+    if(moveLeft) player.position.x -= speed;
+    if(moveRight) player.position.x += speed;
+
+    // Camera follows
+    camera.position.x = player.position.x;
+    camera.position.z = player.position.z + 5;
+    camera.position.y = player.position.y + 3;
+    camera.lookAt(player.position);
+
+    // Enemy AI
+    enemies.forEach(e=>{
+        let dx = player.position.x - e.position.x;
+        let dz = player.position.z - e.position.z;
+        let dist = Math.sqrt(dx*dx+dz*dz);
+        if(dist>0.1){
+            e.position.x += dx*0.01;
+            e.position.z += dz*0.01;
+        }
+        if(dist<1.5){ player.userData.hp -= 0.05; }
+    });
+
+    // NPC interaction
+    npcs.forEach(n=>{
+        let dx = player.position.x - n.position.x;
+        let dz = player.position.z - n.position.z;
+        if(Math.sqrt(dx*dx+dz*dz)<2){
+            document.getElementById('hud').innerHTML=`HP: ${Math.floor(player.userData.hp)} | Inventory: ${player.userData.inventory.join(", ")} | ${n.userData.text}`;
+        }
+    });
+
+    // HUD
+    document.getElementById('hud').innerHTML=`HP: ${Math.floor(player.userData.hp)} | Inventory: ${player.userData.inventory.join(", ")} | Current: ${player.userData.name}`;
+    renderer.render(scene,camera);
+}
+animate();
 </script>
 </body>
 </html>
