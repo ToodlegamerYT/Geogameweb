@@ -1,311 +1,139 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>GeoGames Game: GeoDash</title>
+<title>GeoGames Game GeoDash</title>
 <style>
-body{margin:0;overflow:hidden;background:black;font-family:Arial}
-canvas{display:block}
+body{margin:0;overflow:hidden;background:#111;font-family:Arial;}
+canvas{display:block;}
+#ui{position:absolute;top:10px;left:50%;transform:translateX(-50%);color:white;font-size:20px;}
+#menu{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:white;text-align:center;}
+button{padding:10px 20px;margin:10px;font-size:18px;}
 </style>
 </head>
 <body>
 
+<div id="ui">0%</div>
+<div id="menu">
+<h1>GEOMETRY DASH HTML</h1>
+<button onclick="startLevel(0)">Easy</button>
+<button onclick="startLevel(50)">Medium</button>
+<button onclick="startLevel(150)">Hard</button>
+<button onclick="practice=!practice">Practice Mode</button>
+</div>
 <canvas id="game"></canvas>
 
 <script>
 const canvas=document.getElementById("game");
 const ctx=canvas.getContext("2d");
+canvas.width=window.innerWidth;
+canvas.height=window.innerHeight;
 
-canvas.width=innerWidth;
-canvas.height=innerHeight;
+window.onresize=()=>{canvas.width=window.innerWidth; canvas.height=window.innerHeight;}
 
-let state="menu";
-let practice=false;
-let level=0;
-let gravity=1;
-let speed=5;
-let dual=false;
-let theme=0;
+let player={x:150,y:300,w:35,h:35,dy:0,rot:0,gravity:1,jumps:999};
+let playerMode="cube"; // cube, ship, wave, ufo, ball
+let holding=false;
+let obstacles=[],portals=[],pads=[],orbs=[],spikes=[],particles=[];
+let cameraX=0,levelLength=9000,attempts=0,practice=false;
+let menu=document.getElementById("menu");
+let ui=document.getElementById("ui");
+let percent=0;
 
-let saveData=JSON.parse(localStorage.getItem("gdSave"))||{
-level:0,coins:0,icon:0,unlocked:[true,false,false,false]
-};
-
-level=saveData.level;
-
-let player={
-x:150,y:canvas.height-80,size:40,
-dy:0,icon:saveData.icon,alive:true
-};
-
-let player2={x:150,y:100,size:40,dy:0};
-
-let spikes=[],coins=[],pads=[],portals=[],orbs=[],trail=[],particles=[];
-let bgOffset=0;
-
-function saveGame(){
-localStorage.setItem("gdSave",JSON.stringify(saveData));
+// Generate level with obstacles, portals, orbs, spikes, pads
+function generateLevel(diff){
+obstacles=[];portals=[];pads=[];orbs=[];spikes=[];
+for(let i=400;i<levelLength;i+=Math.random()*200+150){
+let h=40+Math.random()*80;
+obstacles.push({x:i,y:canvas.height-h,w:28,h:h});
+if(Math.random()<0.3)pads.push({x:i+60,y:canvas.height-20,w:30,h:10});
+if(Math.random()<0.2)portals.push({x:i+100,y:canvas.height-120,type:["cube","ship","wave","ufo","ball"][Math.floor(Math.random()*5)]});
+if(Math.random()<0.2)orbs.push({x:i+80,y:canvas.height-150,type:["yellow","blue","pink"][Math.floor(Math.random()*3)]});
+if(Math.random()<0.3)spikes.push({x:i+Math.random()*40,y:canvas.height-20,w:20,h:20});
+}
 }
 
-function rand(a,b){return Math.random()*(b-a)+a;}
-
-function generateLevel(n){
-let s=[],c=[],p=[],pt=[],o=[];
-let count=Math.min(6+Math.floor(n/10),25);
-for(let i=0;i<count;i++){
-let gap=rand(200,350);
-let prev=s.length?s[s.length-1].x:canvas.width;
-let x=prev+gap;
-
-s.push({x:x,y:canvas.height-50,w:40,h:50});
-
-if(Math.random()<0.4)c.push({x:x+80,y:canvas.height-150,got:false});
-if(Math.random()<0.3)p.push({x:x+40,y:canvas.height-20});
-if(Math.random()<0.3)o.push({x:x+60,y:canvas.height-200,type:"yellow"});
-if(Math.random()<0.2)pt.push({x:x+100,y:canvas.height-200,type:"gravity"});
-if(Math.random()<0.2)pt.push({x:x+130,y:canvas.height-180,type:"speed"});
-if(Math.random()<0.1)pt.push({x:x+160,y:canvas.height-160,type:"dual"});
-}
-return{s,c,p,pt,o};
+// Start level
+function startLevel(diff){
+menu.style.display="none";
+generateLevel(diff);
+player.x=150;player.y=300;player.dy=0;player.jumps=999;
+playerMode="cube";cameraX=0;attempts=0;practice=false;
 }
 
-function loadLevel(n){
-let g=generateLevel(n);
-spikes=g.s;
-coins=g.c;
-pads=g.p;
-portals=g.pt;
-orbs=g.o;
-player.x=150;
-player.y=canvas.height-player.size;
-player.dy=0;
-player.alive=true;
-gravity=1;
-speed=5;
-dual=false;
-theme=Math.floor(level/50)%3;
+// Controls
+document.addEventListener("keydown",e=>{if(e.code==="Space")holding=true;});
+document.addEventListener("keyup",e=>{if(e.code==="Space")holding=false;});
+
+// Respawn on death
+function die(){
+if(!practice)attempts++;
+player.x=150;player.y=300;player.dy=0;cameraX=0;
 }
 
-document.addEventListener("keydown",e=>{
-if(state==="menu"){
-if(e.code==="Enter")state="level";
-}
-else if(state==="level"){
-if(e.code==="Digit1"){level=0;start();}
-if(e.code==="Digit2"){level=50;start();}
-if(e.code==="Digit3"){level=150;start();}
-}
-else if(state==="game"){
-if(e.code==="Space"){
-player.dy=-15;
-if(dual)player2.dy=-15;
-}
-if(e.code==="KeyC"){
-player.icon=(player.icon+1)%3;
-saveData.icon=player.icon;
-saveGame();
-}
-if(e.code==="KeyE")state="editor";
-}
-});
-
-canvas.onclick=e=>{
-if(state==="editor"){
-spikes.push({
-x:e.clientX,
-y:e.clientY,
-w:40,h:50
-});
-localStorage.setItem("custom",
-JSON.stringify(spikes));
-}
-};
-
-function start(){
-state="game";
-loadLevel(level);
-}
-
-function explode(){
-for(let i=0;i<30;i++){
-particles.push({
-x:player.x,y:player.y,
-dx:rand(-5,5),
-dy:rand(-5,5),
-life:30
-});
-}
-canvas.style.transform="translate(10px,0)";
-setTimeout(()=>canvas.style.transform="translate(0,0)",100);
-}
-
+// Physics
 function update(){
-if(state!=="game")return;
-
-bgOffset+=2;
-
-player.dy+=gravity;
+switch(playerMode){
+case "cube":player.dy+=0.6*player.gravity;if(holding && player.y+player.h>=canvas.height)player.dy=-12*player.gravity;player.rot+=0.1;break;
+case "ship":player.dy+=(holding?-0.5:0.5);break;
+case "wave":player.y+=holding?-6:6;break;
+case "ufo":player.dy+=0.6;if(holding){player.dy=-10;holding=false;}break;
+case "ball":player.dy+=0.6*player.gravity;if(holding){player.gravity*=-1;holding=false;}break;
+}
 player.y+=player.dy;
 
-if(player.y+player.size>canvas.height){
-player.y=canvas.height-player.size;
-player.dy=0;
-}
-
-trail.push({x:player.x,y:player.y});
-if(trail.length>20)trail.shift();
-
-for(let s of spikes){
-s.x-=speed;
-if(player.x<s.x+s.w &&
-player.x+player.size>s.x &&
-player.y<s.y+s.h &&
-player.y+player.size>s.y && player.alive){
-player.alive=false;
-explode();
-setTimeout(()=>loadLevel(level),500);
+// Collisions
+for(let o of obstacles){
+if(player.x+player.w>o.x-cameraX && player.x<o.x+o.w-cameraX && player.y+player.h>o.y){
+die();
 }
 }
-
-for(let c of coins){
-c.x-=speed;
-if(!c.got &&
-player.x<c.x+20 &&
-player.x+player.size>c.x &&
-player.y<c.y+20 &&
-player.y+player.size>c.y){
-c.got=true;
-saveData.coins++;
-saveGame();
-}
-}
-
-for(let o of orbs){
-o.x-=speed;
-if(player.x<o.x+20 &&
-player.x+player.size>o.x &&
-player.y<o.y+20 &&
-player.y+player.size>o.y){
-player.dy=-18;
-}
-}
-
 for(let p of pads){
-p.x-=speed;
-if(player.x<p.x+20 &&
-player.x+player.size>p.x &&
-player.y+player.size>=p.y){
-player.dy=-20;
+if(player.x+player.w>p.x-cameraX && player.x<p.x+p.w-cameraX && player.y+player.h>=p.y){
+player.dy=-15;
 }
 }
-
-for(let pt of portals){
-pt.x-=speed;
-if(player.x<pt.x+30 &&
-player.x+player.size>pt.x &&
-player.y<pt.y+30 &&
-player.y+player.size>pt.y){
-if(pt.type==="gravity")gravity*=-1;
-if(pt.type==="speed")speed=rand(3,10);
-if(pt.type==="dual")dual=true;
-}
-}
-
-if(dual){
-player2.dy+=gravity;
-player2.y+=player2.dy;
-}
-
-for(let p of particles){
-p.x+=p.dx;
-p.y+=p.dy;
-p.life--;
-}
-particles=particles.filter(p=>p.life>0);
-
-if(spikes.every(s=>s.x+s.w<0)){
-level++;
-saveData.level=level;
-if(level>=500)level=0;
-saveGame();
-loadLevel(level);
-}
-}
-
-function draw(){
-
-ctx.fillStyle=["#222","#001f3f","#330000"][theme];
-ctx.fillRect(0,0,canvas.width,canvas.height);
-
-if(state==="menu"){
-ctx.fillStyle="white";
-ctx.font="60px Arial";
-ctx.fillText("ULTIMATE GD",200,200);
-ctx.font="30px Arial";
-ctx.fillText("ENTER",200,300);
-return;
-}
-
-if(state==="level"){
-ctx.fillStyle="white";
-ctx.font="40px Arial";
-ctx.fillText("1 EASY",200,200);
-ctx.fillText("2 MED",200,260);
-ctx.fillText("3 HARD",200,320);
-return;
-}
-
-ctx.fillStyle="rgba(0,255,255,0.3)";
-for(let t of trail)
-ctx.fillRect(t.x,t.y,player.size,player.size);
-
-ctx.fillStyle=["cyan","lime","magenta"][player.icon];
-ctx.fillRect(player.x,player.y,player.size,player.size);
-
-if(dual)
-ctx.fillRect(player2.x,player2.y,40,40);
-
-ctx.fillStyle="red";
 for(let s of spikes){
-ctx.beginPath();
-ctx.moveTo(s.x,s.y+s.h);
-ctx.lineTo(s.x+s.w/2,s.y);
-ctx.lineTo(s.x+s.w,s.y+s.h);
-ctx.fill();
-}
-
-ctx.fillStyle="yellow";
-for(let c of coins){
-if(!c.got){
-ctx.beginPath();
-ctx.arc(c.x,c.y,10,0,Math.PI*2);
-ctx.fill();
+if(player.x+player.w>s.x-cameraX && player.x<s.x+s.w-cameraX && player.y+player.h>s.y){
+die();
 }
 }
-
-ctx.fillStyle="blue";
-for(let p of pads)
-ctx.fillRect(p.x,p.y,20,10);
-
-ctx.fillStyle="purple";
-for(let pt of portals)
-ctx.fillRect(pt.x,pt.y,30,30);
-
-ctx.fillStyle="white";
-for(let p of particles)
-ctx.fillRect(p.x,p.y,4,4);
-
-ctx.fillStyle="white";
-ctx.font="25px Arial";
-ctx.fillText("Level: "+(level+1),20,40);
-ctx.fillText("Coins: "+saveData.coins,20,70);
+for(let o of orbs){
+if(player.x+player.w>o.x-cameraX && player.x<o.x+30-cameraX && player.y+player.h>o.y && player.y<o.y+30){
+switch(o.type){
+case "yellow":player.dy=-18;break;
+case "blue":player.gravity*=-1;break;
+case "pink":player.dy=-25;break;
+}
+}
+}
+for(let po of portals){
+if(player.x+player.w>po.x-cameraX && player.x<po.x+40-cameraX){
+playerMode=po.type;
+}
 }
 
-function loop(){
-update();
-draw();
-requestAnimationFrame(loop);
+// Ground
+if(player.y+player.h>=canvas.height){player.y=canvas.height-player.h;player.dy=0;player.jumps=999;}
+cameraX+=6;
+percent=Math.floor(cameraX/levelLength*100);
+ui.innerText=percent+"% Attempts:"+attempts;
+if(percent>=100){generateLevel(0);cameraX=0;}
 }
+
+// Draw
+function draw(){
+ctx.clearRect(0,0,canvas.width,canvas.height);
+ctx.fillStyle="#0ff";ctx.save();ctx.translate(player.x+player.w/2,player.y+player.h/2);ctx.rotate(player.rot);ctx.fillRect(-player.w/2,-player.h/2,player.w,player.h);ctx.restore();
+ctx.fillStyle="red";for(let o of obstacles)ctx.fillRect(o.x-cameraX,o.y,o.w,o.h);
+ctx.fillStyle="blue";for(let p of pads)ctx.fillRect(p.x-cameraX,p.y,p.w,p.h);
+ctx.fillStyle="purple";for(let po of portals)ctx.fillRect(po.x-cameraX,po.y,40,80);
+ctx.fillStyle="yellow";for(let o of orbs)ctx.beginPath(),ctx.arc(o.x-cameraX,o.y,10,0,Math.PI*2),ctx.fill();
+ctx.fillStyle="white";for(let s of spikes)ctx.fillRect(s.x-cameraX,s.y,s.w,s.h);
+}
+
+// Loop
+function loop(){update();draw();requestAnimationFrame(loop);}
 loop();
 </script>
 
