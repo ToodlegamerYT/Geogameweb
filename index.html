@@ -2,140 +2,227 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>GeoGames Game GeoDash</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ultimate 2D RPG</title>
 <style>
-body{margin:0;overflow:hidden;background:#111;font-family:Arial;}
-canvas{display:block;}
-#ui{position:absolute;top:10px;left:50%;transform:translateX(-50%);color:white;font-size:20px;}
-#menu{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);color:white;text-align:center;}
-button{padding:10px 20px;margin:10px;font-size:18px;}
+body { margin:0; background:#111; font-family:sans-serif; color:white; display:flex; flex-direction:column; align-items:center; }
+canvas { border:3px solid #222; background:#333; margin-top:10px; }
+#hud { margin-top:10px; }
+#inventory, #quests { margin-top:5px; }
 </style>
 </head>
 <body>
-
-<div id="ui">0%</div>
-<div id="menu">
-<h1>GEOMETRY DASH HTML</h1>
-<button onclick="startLevel(0)">Easy</button>
-<button onclick="startLevel(50)">Medium</button>
-<button onclick="startLevel(150)">Hard</button>
-<button onclick="practice=!practice">Practice Mode</button>
-</div>
-<canvas id="game"></canvas>
+<h1>Ultimate 2D RPG</h1>
+<canvas id="game" width="640" height="480"></canvas>
+<div id="hud"></div>
+<div id="inventory"></div>
+<div id="quests"></div>
 
 <script>
-const canvas=document.getElementById("game");
-const ctx=canvas.getContext("2d");
-canvas.width=window.innerWidth;
-canvas.height=window.innerHeight;
+// ===== CANVAS SETUP =====
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+const hud = document.getElementById("hud");
+const inventoryDiv = document.getElementById("inventory");
+const questsDiv = document.getElementById("quests");
 
-window.onresize=()=>{canvas.width=window.innerWidth; canvas.height=window.innerHeight;}
+const tileSize = 32;
 
-let player={x:150,y:300,w:35,h:35,dy:0,rot:0,gravity:1,jumps:999};
-let playerMode="cube"; // cube, ship, wave, ufo, ball
-let holding=false;
-let obstacles=[],portals=[],pads=[],orbs=[],spikes=[],particles=[];
-let cameraX=0,levelLength=9000,attempts=0,practice=false;
-let menu=document.getElementById("menu");
-let ui=document.getElementById("ui");
-let percent=0;
+// ===== GAME DATA =====
 
-// Generate level with obstacles, portals, orbs, spikes, pads
-function generateLevel(diff){
-obstacles=[];portals=[];pads=[];orbs=[];spikes=[];
-for(let i=400;i<levelLength;i+=Math.random()*200+150){
-let h=40+Math.random()*80;
-obstacles.push({x:i,y:canvas.height-h,w:28,h:h});
-if(Math.random()<0.3)pads.push({x:i+60,y:canvas.height-20,w:30,h:10});
-if(Math.random()<0.2)portals.push({x:i+100,y:canvas.height-120,type:["cube","ship","wave","ufo","ball"][Math.floor(Math.random()*5)]});
-if(Math.random()<0.2)orbs.push({x:i+80,y:canvas.height-150,type:["yellow","blue","pink"][Math.floor(Math.random()*3)]});
-if(Math.random()<0.3)spikes.push({x:i+Math.random()*40,y:canvas.height-20,w:20,h:20});
-}
-}
+// Map tiles (0=floor,1=wall,2=npc,3=item,4=portal)
+let maps = [
+  [
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,3,0,0,4,1],
+    [1,0,1,1,0,1,1,1,0,1,1,1,0,0,1,1,1,0,0,1],
+    [1,0,0,0,0,0,0,1,0,0,0,1,2,0,0,0,0,0,0,1],
+    [1,0,1,1,1,1,0,1,0,1,0,1,1,0,1,1,0,1,0,1],
+    [1,0,0,0,0,1,0,0,0,1,0,0,0,0,0,1,0,0,0,1],
+    [1,1,1,1,0,1,1,1,0,1,1,1,1,0,0,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,0,1,1,1,1,1,1,1,1,0,1,1,0,0,1,1,1,0,1],
+    [1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1],
+    [1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1]
+  ]
+];
 
-// Start level
-function startLevel(diff){
-menu.style.display="none";
-generateLevel(diff);
-player.x=150;player.y=300;player.dy=0;player.jumps=999;
-playerMode="cube";cameraX=0;attempts=0;practice=false;
-}
+let currentMap = 0;
+let map = maps[currentMap];
 
-// Controls
-document.addEventListener("keydown",e=>{if(e.code==="Space")holding=true;});
-document.addEventListener("keyup",e=>{if(e.code==="Space")holding=false;});
+// ===== PLAYER PARTY =====
+let players = [
+  {name:"Luffy", x:1, y:1, hp:50, mp:20, color:"yellow", inventory:[], xp:0, level:1},
+  {name:"Zoro", x:2, y:1, hp:45, mp:15, color:"green", inventory:[], xp:0, level:1},
+  {name:"Nami", x:3, y:1, hp:40, mp:25, color:"orange", inventory:[], xp:0, level:1}
+];
 
-// Respawn on death
-function die(){
-if(!practice)attempts++;
-player.x=150;player.y=300;player.dy=0;cameraX=0;
-}
+let currentPlayer = 0;
 
-// Physics
-function update(){
-switch(playerMode){
-case "cube":player.dy+=0.6*player.gravity;if(holding && player.y+player.h>=canvas.height)player.dy=-12*player.gravity;player.rot+=0.1;break;
-case "ship":player.dy+=(holding?-0.5:0.5);break;
-case "wave":player.y+=holding?-6:6;break;
-case "ufo":player.dy+=0.6;if(holding){player.dy=-10;holding=false;}break;
-case "ball":player.dy+=0.6*player.gravity;if(holding){player.gravity*=-1;holding=false;}break;
-}
-player.y+=player.dy;
+// ===== ENEMIES =====
+let enemies = [
+  {x:10,y:5,hp:20,color:"red",xp:20},
+  {x:13,y:8,hp:30,color:"purple",xp:30}
+];
 
-// Collisions
-for(let o of obstacles){
-if(player.x+player.w>o.x-cameraX && player.x<o.x+o.w-cameraX && player.y+player.h>o.y){
-die();
-}
-}
-for(let p of pads){
-if(player.x+player.w>p.x-cameraX && player.x<p.x+p.w-cameraX && player.y+player.h>=p.y){
-player.dy=-15;
-}
-}
-for(let s of spikes){
-if(player.x+player.w>s.x-cameraX && player.x<s.x+s.w-cameraX && player.y+player.h>s.y){
-die();
-}
-}
-for(let o of orbs){
-if(player.x+player.w>o.x-cameraX && player.x<o.x+30-cameraX && player.y+player.h>o.y && player.y<o.y+30){
-switch(o.type){
-case "yellow":player.dy=-18;break;
-case "blue":player.gravity*=-1;break;
-case "pink":player.dy=-25;break;
-}
-}
-}
-for(let po of portals){
-if(player.x+player.w>po.x-cameraX && player.x<po.x+40-cameraX){
-playerMode=po.type;
-}
-}
+// ===== ITEMS =====
+let items = [
+  {x:15,y:1,name:"Potion",effect:(p)=>{p.hp+=20; alert(`${p.name} restored 20 HP!`);}},
+  {x:5,y:5,name:"Gold",effect:(p)=>{alert(`${p.name} collected Gold!`);}}
+];
 
-// Ground
-if(player.y+player.h>=canvas.height){player.y=canvas.height-player.h;player.dy=0;player.jumps=999;}
-cameraX+=6;
-percent=Math.floor(cameraX/levelLength*100);
-ui.innerText=percent+"% Attempts:"+attempts;
-if(percent>=100){generateLevel(0);cameraX=0;}
-}
+// ===== NPCs =====
+let npcs = [
+  {x:12,y:3,text:"Hey heroes! Collect the Potion and reach the portal to advance!",quest:"Collect Potion"}
+];
 
-// Draw
+// ===== PORTALS =====
+let portals = [
+  {x:18,y:1,targetMap:0,targetX:1,targetY:1}
+];
+
+// ===== DRAW FUNCTION =====
 function draw(){
-ctx.clearRect(0,0,canvas.width,canvas.height);
-ctx.fillStyle="#0ff";ctx.save();ctx.translate(player.x+player.w/2,player.y+player.h/2);ctx.rotate(player.rot);ctx.fillRect(-player.w/2,-player.h/2,player.w,player.h);ctx.restore();
-ctx.fillStyle="red";for(let o of obstacles)ctx.fillRect(o.x-cameraX,o.y,o.w,o.h);
-ctx.fillStyle="blue";for(let p of pads)ctx.fillRect(p.x-cameraX,p.y,p.w,p.h);
-ctx.fillStyle="purple";for(let po of portals)ctx.fillRect(po.x-cameraX,po.y,40,80);
-ctx.fillStyle="yellow";for(let o of orbs)ctx.beginPath(),ctx.arc(o.x-cameraX,o.y,10,0,Math.PI*2),ctx.fill();
-ctx.fillStyle="white";for(let s of spikes)ctx.fillRect(s.x-cameraX,s.y,s.w,s.h);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  
+  // Draw map
+  for(let y=0;y<map.length;y++){
+    for(let x=0;x<map[y].length;x++){
+      let tile=map[y][x];
+      if(tile===1) ctx.fillStyle="#222";
+      else ctx.fillStyle="#666";
+      ctx.fillRect(x*tileSize,y*tileSize,tileSize,tileSize);
+    }
+  }
+  
+  // Items
+  items.forEach(i=>{
+    ctx.fillStyle="#ff0";
+    ctx.fillRect(i.x*tileSize,i.y*tileSize,tileSize,tileSize);
+  });
+  
+  // NPCs
+  npcs.forEach(n=>{
+    ctx.fillStyle="#0af";
+    ctx.fillRect(n.x*tileSize,n.y*tileSize,tileSize,tileSize);
+  });
+  
+  // Portals
+  portals.forEach(p=>{
+    ctx.fillStyle="#f0f";
+    ctx.fillRect(p.x*tileSize,p.y*tileSize,tileSize,tileSize);
+  });
+  
+  // Enemies
+  enemies.forEach(e=>{
+    ctx.fillStyle=e.color;
+    ctx.fillRect(e.x*tileSize,e.y*tileSize,tileSize,tileSize);
+  });
+  
+  // Players
+  players.forEach(p=>{
+    ctx.fillStyle=p.color;
+    ctx.fillRect(p.x*tileSize,p.y*tileSize,tileSize,tileSize);
+  });
+  
+  updateHUD();
 }
 
-// Loop
-function loop(){update();draw();requestAnimationFrame(loop);}
-loop();
-</script>
+// ===== HUD =====
+function updateHUD(){
+  let p=players[currentPlayer];
+  hud.innerHTML=`Current: ${p.name} | HP: ${p.hp} | MP: ${p.mp} | Level: ${p.level} | XP: ${p.xp}`;
+  inventoryDiv.innerHTML=`Inventory: ${p.inventory.join(", ")}`;
+  questsDiv.innerHTML=`Quests: ${p.quests ? p.quests.join(", ") : ""}`;
+}
 
+// ===== PLAYER MOVEMENT =====
+document.addEventListener("keydown",e=>{
+  let p=players[currentPlayer];
+  let nx=p.x;
+  let ny=p.y;
+  
+  if(e.key==="ArrowUp") ny--;
+  if(e.key==="ArrowDown") ny++;
+  if(e.key==="ArrowLeft") nx--;
+  if(e.key==="ArrowRight") nx++;
+  if(e.key==="Tab"){ // Switch character
+    currentPlayer=(currentPlayer+1)%players.length;
+    draw();
+    return;
+  }
+  
+  if(map[ny] && map[ny][nx]!==1){
+    p.x=nx; p.y=ny;
+  }
+  
+  // Items
+  items.forEach((i,index)=>{
+    if(p.x===i.x && p.y===i.y){
+      p.inventory.push(i.name);
+      i.effect(p);
+      items.splice(index,1);
+    }
+  });
+  
+  // NPCs
+  npcs.forEach(n=>{
+    if(p.x===n.x && p.y===n.y){
+      alert(n.text);
+      if(!p.quests) p.quests=[];
+      if(!p.quests.includes(n.quest)) p.quests.push(n.quest);
+    }
+  });
+  
+  // Enemies
+  enemies.forEach((e,index)=>{
+    if(p.x===e.x && p.y===e.y){
+      e.hp-=10;
+      p.hp-=5;
+      alert(`Combat! ${p.name} HP:${p.hp} Enemy HP:${e.hp}`);
+      if(e.hp<=0){
+        alert("Enemy defeated!");
+        p.xp+=e.xp;
+        enemies.splice(index,1);
+        if(p.xp>=p.level*50){p.level++; p.xp=0; alert(`${p.name} leveled up!`);}
+      }
+      if(p.hp<=0){
+        alert(`${p.name} died! Respawning...`);
+        p.hp=50; p.x=1; p.y=1;
+      }
+    }
+  });
+  
+  // Portals
+  portals.forEach(portal=>{
+    if(p.x===portal.x && p.y===portal.y){
+      map=maps[portal.targetMap];
+      p.x=portal.targetX;
+      p.y=portal.targetY;
+      alert(`${p.name} entered a new area!`);
+    }
+  });
+  
+  draw();
+});
+
+// ===== ENEMY AI =====
+function moveEnemies(){
+  enemies.forEach(e=>{
+    let target=players[0]; // simple AI toward first player
+    let dx=target.x-e.x;
+    let dy=target.y-e.y;
+    if(Math.abs(dx)>Math.abs(dy)) e.x += dx>0?1:-1;
+    else e.y += dy>0?1:-1;
+    if(map[e.y] && map[e.y][e.x]===1){e.x-=dx>0?1:-1; e.y-=dy>0?1:-1;}
+  });
+  draw();
+}
+
+setInterval(moveEnemies,1000);
+
+// ===== INITIAL DRAW =====
+draw();
+</script>
 </body>
 </html>
